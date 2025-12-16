@@ -41,7 +41,9 @@ python -m scripts.base_train
   --num_iterations=10
   --eval_tokens=64
   --core_metric_every=-1 
-  --sample_every=5           
+  --sample_every=5
+  --force_override_config=True
+    
 python -m scripts.base_train 
   --depth=2 
   --max_seq_len=64 
