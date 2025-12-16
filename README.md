@@ -32,6 +32,17 @@ python -m scripts.tok_train --max_chars=100000
 ## 4. 訓練最小化模型
 ```bash
 python -m scripts.base_train 
+  --depth=2
+  --max_seq_len=32
+  --model_dim=32
+  --n_head=2
+  --device_batch_size=1
+  --total_batch_size=16
+  --num_iterations=10
+  --eval_tokens=64
+  --core_metric_every=-1 
+  --sample_every=5           
+python -m scripts.base_train 
   --depth=2 
   --max_seq_len=64 
   --n_head=2 
