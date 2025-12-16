@@ -42,7 +42,6 @@ python -m scripts.base_train
   --eval_tokens=16 
   --core_metric_every=-1 
   --sample_every=1
-  --force_override_config=True
     
 python -m scripts.base_train 
   --depth=2 
