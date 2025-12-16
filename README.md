@@ -79,7 +79,11 @@ python -m scripts.base_train
 python -m scripts.chat_web
 ```
 打開瀏覽器即可與最小模型互動。
-
+## 7. 重新開啟（可選）
+```bash
+cd nanochat
+python -m venv venv
+```
 ---
 
 ### 註解
