@@ -31,7 +31,6 @@ python -m scripts.tok_train --max_chars=100000
 
 ## 4. 訓練最小化模型
 ```bash
-
 python -m scripts.base_train 
   --depth=2 
   --max_seq_len=64 
@@ -41,7 +40,9 @@ python -m scripts.base_train
   --num_iterations=20 
   --eval_tokens=128 
   --core_metric_every=-1 
-  --sample_every=10
+  --sample_every=10 
+  --force_override_config=True
+
 ```
 - `depth=2`：Transformer 層數，非常小
 - `max_seq_len=64`：序列長度
