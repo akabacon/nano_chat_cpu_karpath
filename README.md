@@ -14,6 +14,7 @@ pip install -r requirements.txt
 
 ## 2. 安裝 Rust（用於 rustbpe tokenizer）
 ```bash
+sudo apt install -y curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source $HOME/.cargo/env
 ```
