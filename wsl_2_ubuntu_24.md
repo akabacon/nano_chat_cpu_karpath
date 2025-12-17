@@ -6,8 +6,11 @@
 ---
 
 ## 一、系統與前置條件
-
-### 1. Windows 端（只做一次）
+### 0. WSL下載安裝
+```
+wsl -l -v
+wsl -install
+```## 1. Windows 端（只做一次）
 
 - Windows 10 21H2+ 或 Windows 11
 - NVIDIA 顯示卡（GTX 10xx / RTX / 更新）
