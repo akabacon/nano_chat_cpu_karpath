@@ -1,156 +1,113 @@
-這份筆記整理得非常清晰！針對你遇到的 **`uv` 下載慢**以及 **`maturin` 編譯久**的問題，我稍微調整了你的腳本邏輯，加入了一些「防卡死」與「加速」的細節設定。
+這份整理非常專業！你已經把 **NanoChat** 從環境配置、Rust 編譯到多階段訓練（Pretrain -> Midtrain -> SFT）的邏輯全部打通了。
 
-這份經過優化的筆記，可以直接作為你的 **H100 環境快速部署指南**：
+針對你目前的 **RTX 4050 (6GB)** 測試環境，以及未來可能的 **8xH100** 正式環境，我將你的指令整理成一份**「階梯式執行清單」**。這份清單分為：環境準備、資料下載、單卡測試、以及**多卡正式訓練**。
 
 ---
 
-## 🚀 NanoChat 快速部署指南 (Ubuntu 24.04 + GPU 加速版)
+### 第一階段：環境與 Tokenizer 編譯
 
-### 1. 系統環境初始化
-
-此步驟確保編譯環境（Rust）與隔離環境（Python venv）就緒。
+這是最基礎的一步，確保 Rust BPE 速度優化到位。
 
 ```bash
-# 更新系統套件
-sudo apt update && sudo apt install -y python3-pip git build-essential
-
-# 複製專案
-git clone https://github.com/karpathy/nanochat.git && cd nanochat
-
-# 安裝 Rust (Tokenizer 編譯核心)
-# 使用 -s -- -y 跳過互動式確認
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source $HOME/.cargo/env
-
-# 安裝 uv 並設定 PATH
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.cargo/env
-
-export PATH="$HOME/.local/bin:$PATH"
-uv --version
-
-```
-
-### 2. 高速安裝依賴項 (重點優化)
-
-針對台灣網路環境，使用 **NCHU (國網中心)** 鏡像站，並增加超時容忍度。
-
-```bash
-# 設定加速環境變數 (這兩行對 uv 下載速度至關重要)
-export UV_INDEX_URL=https://pypi.nchc.org.tw/simple/
-export UV_INDEX_URL=https://pypi.org/simple
-export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-
-unset UV_INDEX_URL
-export UV_HTTP_TIMEOUT=600
-
-# 建立環境並同步 (GPU 模式)
+# 1. 安裝環境與依賴
 uv venv
 source .venv/bin/activate
+export UV_HTTP_TIMEOUT=600
 uv sync --extra gpu
 
-# 編譯 Rust Tokenizer
-# 使用 --release 確保效能，--jobs 可指定編譯執行緒 (如 8xH100 機器可設很大)
+# 2. 編譯 Rust Tokenizer (沒這步訓練會極慢)
 uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
 
 ```
 
-### 3. 資料處理與驗證訓練
+---
 
-先用小數據量測試流程，避免 H100 空轉。
+### 第二階段：資料集準備 (重要)
+
+**這是你之前卡住的關鍵**。必須先有數據分片（Shards），DataLoader 才能運作。
 
 ```bash
-# 1. 訓練 Tokenizer (初步測試僅用 10萬字)
-uv run python -m scripts.tok_train --max_chars=100000
+# 1. 下載身份資訊 (用於後續 SFT)
+curl -L -o identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
 
-# 2. 完整訓練 (batchsize可做調整)
-uv run python -m scripts.base_train \
-  --depth=2 \
-  --max_seq_len=1 \
-  --device_batch_size=8 \
-  --total_batch_size=64 \
-  --num_iterations=20 \
-  --sample_every=10
+# 2. 下載初步訓練資料 (先抓 16 個分片測試，確保 4050 跑得動)
+uv run python -m nanochat.dataset -n 16
 
-uv run python -m scripts.base_train \
-  --depth=2 \
-  --max_seq_len=128 \
-  --device_batch_size=32 \
-  --total_batch_size=4096 \
-  --num_iterations=100 \
-  --sample_every=10
+# 3. 訓練 Tokenizer (針對這批資料學習詞表)
+uv run python -m scripts.tok_train --max_chars=100000000
 
-uv run python -m scripts.base_train \
-  --depth=12 \
-  --max_seq_len=512 \
-  --device_batch_size=4 \
-  --num_iterations=100 \
-  --sample_every=50
-
-uv run torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-  --depth=20 \
-  --device_batch_size=8 \
-  --num_iterations=50
-
-uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
-curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
-
-# train tokenizer on ~4B characters and kick off download of the rest for pretraining
-python -m nanochat.dataset -n 16
-# start downloading the rest of the shards for a total of 800 (see below why 800)
-python -m nanochat.dataset -n 800 &
-# todo: download the rest of it
-python -m scripts.tok_train --max_chars=4000000000
-python -m scripts.tok_eval
-
-NPROC_PER_NODE=8
-
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=32 --device_batch_size=8 --run=$WANDB_RUN
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_loss
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_eval
-
-# midtrain
-# NOTE: ensure that we use the same device_batch_size here as the base training script.
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.mid_train -- --device_batch_size=8 --run=$WANDB_RUN
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i mid
-
-# sft
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft -- --run=$WANDB_RUN
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i sft
-
-# generate final report
-python -m nanochat.report generate
-
-# talk to it
-python -m scripts.chat_web
 ```
 
-### 4. 啟動 Web UI 互動
+---
 
-訓練完成後（或載入權重後），開啟網頁介面測試。
+### 第三階段：RTX 4050 穩定測試指令 (Sanity Check)
+
+在 6GB 顯存上，請使用這組參數確認流程 100% 噴出 `dt`：
 
 ```bash
-# 啟動 Web UI
-# 提示：如果是遠端伺服器，可能需要加上 --host 0.0.0.0
+# 測試 0.04B 極小模型
+uv run python -m scripts.base_train \
+  --depth=4 \
+  --device_batch_size=1 \
+  --max_seq_len=256 \
+  --total_batch_size=1024 \
+  --num_iterations=100 \
+  --sample_every=20
+
+```
+
+---
+
+### 第四階段：8xH100 正式訓練 (4 小時 Speedrun 版)
+
+當你切換到 H100 伺服器時，直接執行這套完整流程。
+
+```bash
+# 1. 下載完整資料集 (800 個分片)
+uv run python -m nanochat.dataset -n 800
+
+# 2. 啟動 DDP 分散式預訓練 (目標 0.39B 模型)
+# 設定總卡數
+export NPROC_PER_NODE=8
+
+uv run torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train \
+  --depth=32 \
+  --device_batch_size=8 \
+  --run="h100_speedrun_base"
+
+# 3. 知識微調 (Mid-train)
+uv run torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.mid_train \
+  --device_batch_size=8 \
+  --run="h100_speedrun_mid"
+
+# 4. 指令微調 (SFT)
+uv run torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft \
+  --run="h100_speedrun_sft"
+
+```
+
+---
+
+### 第五階段：評估與對話
+
+```bash
+# 生成訓練報告
+uv run python -m nanochat.report generate
+
+# 啟動網頁介面與你自己訓練的模型對話
 uv run python -m scripts.chat_web
 
 ```
 
 ---
 
-### 💡 關鍵優化筆記 (Cheat Sheet)
+### 💡 核心參數對照表 (針對不同顯存)
 
-| 問題點 | 解決方案 | 備註 |
-| --- | --- | --- |
-| **uv 下載過慢** | 使用 `UV_INDEX_URL=https://pypi.nchc.org.tw/simple/` | 速度從 KB/s 升至 MB/s |
-| **maturin 編譯卡住** | 確保 `source $HOME/.cargo/env` 已執行 | 需要 Rust 才能編譯 Tokenizer |
-| **H100 預算控制** | 先用 `--depth=2` 跑 Small Run 測試 | 確保沒噴錯再開始 4 小時完整訓練 |
-| **連線中斷** | 使用 `screen` 或 `tmux` 執行腳本 | 避免網路斷線導致訓練中斷 |
+| 參數 | RTX 4050 (6GB) | H100 (80GB) | 說明 |
+| --- | --- | --- | --- |
+| **`--depth`** | 4 ~ 6 | 32 | 決定模型深度與維度 |
+| **`--device_batch_size`** | 1 | 8 ~ 32 | 單卡一次吞多少 Token |
+| **`--max_seq_len`** | 256 | 2048 | 模型的「記憶長度」 |
+| **`--nproc_per_node`** | 1 | 8 | 使用的 GPU 數量 |
 
----
-
-### 下一步建議：
-
-如果你已經準備好進行 **$100 Speedrun**（完整 4 小時訓練），建議你在啟動前先跑一次 `nvidia-smi` 確認 8 顆 H100 都處於 P0 狀態。
-
-**需要我幫你寫一個自動監控 H100 溫度的簡單小工具，好讓你觀察訓練時的負載嗎？**
+**目前你已經準備好資料集了嗎？** 如果已經執行了 `python -m nanochat.dataset -n 16`，你可以現在嘗試跑一次第三階段的 **4050 測試指令**，這次應該在 1 分鐘內就會看到 `step 00000` 出現！
