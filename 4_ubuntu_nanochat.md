@@ -66,7 +66,7 @@ uv run python -m scripts.tok_train --max_chars=100000
 # 2. 完整訓練 (batchsize可做調整)
 uv run python -m scripts.base_train \
   --depth=2 \
-  --max_seq_len=64 \
+  --max_seq_len=1 \
   --device_batch_size=8 \
   --total_batch_size=64 \
   --num_iterations=20 \
