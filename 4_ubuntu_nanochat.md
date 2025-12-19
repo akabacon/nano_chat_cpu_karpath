@@ -33,6 +33,8 @@ source $HOME/.cargo/env
 針對台灣網路環境，使用 **NCHU (國網中心)** 鏡像站，並增加超時容忍度。
 
 ```bash
+pip install uv
+
 # 設定加速環境變數 (這兩行對 uv 下載速度至關重要)
 export UV_INDEX_URL=https://pypi.nchc.org.tw/simple/
 export UV_HTTP_TIMEOUT=600
