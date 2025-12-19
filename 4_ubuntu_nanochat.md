@@ -92,6 +92,37 @@ uv run torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
   --device_batch_size=8 \
   --num_iterations=50
 
+uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
+curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
+
+# train tokenizer on ~4B characters and kick off download of the rest for pretraining
+python -m nanochat.dataset -n 16
+# start downloading the rest of the shards for a total of 800 (see below why 800)
+python -m nanochat.dataset -n 800 &
+# todo: download the rest of it
+python -m scripts.tok_train --max_chars=4000000000
+python -m scripts.tok_eval
+
+NPROC_PER_NODE=8
+
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=32 --device_batch_size=8 --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_loss
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_eval
+
+# midtrain
+# NOTE: ensure that we use the same device_batch_size here as the base training script.
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.mid_train -- --device_batch_size=8 --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i mid
+
+# sft
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft -- --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i sft
+
+# generate final report
+python -m nanochat.report generate
+
+# talk to it
+python -m scripts.chat_web
 ```
 
 ### 4. 啟動 Web UI 互動
