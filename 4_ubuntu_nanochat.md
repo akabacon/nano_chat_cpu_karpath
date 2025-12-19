@@ -34,8 +34,7 @@ pip install uv
 export UV_HTTP_TIMEOUT=300
 uv sync --extra gpu
 
-pip list | grep torch
-pip install torch
+uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
 ```
 
 ### 3. 資料處理與模型訓練 
