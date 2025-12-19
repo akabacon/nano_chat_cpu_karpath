@@ -34,6 +34,7 @@ pip install uv
 export UV_HTTP_TIMEOUT=300
 uv sync --extra gpu
 
+pip list | grep torch
 pip install torch
 ```
 
