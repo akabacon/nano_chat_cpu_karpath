@@ -34,6 +34,7 @@ pip install uv
 export UV_HTTP_TIMEOUT=300
 uv sync --extra gpu
 
+pip install torch
 ```
 
 ### 3. 資料處理與模型訓練 
