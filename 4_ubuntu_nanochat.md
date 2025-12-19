@@ -26,6 +26,9 @@ source $HOME/.cargo/env
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.cargo/env
 
+export PATH="$HOME/.local/bin:$PATH"
+uv --version
+
 ```
 
 ### 2. 高速安裝依賴項 (重點優化)
