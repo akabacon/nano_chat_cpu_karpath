@@ -58,7 +58,13 @@ uv run python -m nanochat.dataset -n 16
 
 專為小顯存設計，關閉編譯以求快速看到結果。
 
+
+
 ```bash
+#初始化tokenizer
+uv run python -m scripts.tok_train --max_chars=1000000
+ls -l /home/cool/nanochat/tokenizer/tokenizer.pkl
+
 # 深度設為 4，自動推算 dim=256，適合 6GB VRAM
 uv run python -m scripts.base_train \
   --depth=4 \
