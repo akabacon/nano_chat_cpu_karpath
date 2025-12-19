@@ -31,6 +31,7 @@ source $HOME/.cargo/env
 # 安裝 uv 並同步依賴
 curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.cargo/env
 pip install uv
+export UV_INDEX_URL=https://pypi.nchc.org.tw/simple/
 export UV_HTTP_TIMEOUT=300
 uv sync --extra gpu
 
