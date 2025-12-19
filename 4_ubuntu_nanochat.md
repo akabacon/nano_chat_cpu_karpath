@@ -1,113 +1,132 @@
-這份整理非常專業！你已經把 **NanoChat** 從環境配置、Rust 編譯到多階段訓練（Pretrain -> Midtrain -> SFT）的邏輯全部打通了。
+# 🚀 NanoChat 部署與訓練全攻略 (RTX 4050 / H100 雙模版)
 
-針對你目前的 **RTX 4050 (6GB)** 測試環境，以及未來可能的 **8xH100** 正式環境，我將你的指令整理成一份**「階梯式執行清單」**。這份清單分為：環境準備、資料下載、單卡測試、以及**多卡正式訓練**。
+## 一、 環境初始化
 
----
-
-### 第一階段：環境與 Tokenizer 編譯
-
-這是最基礎的一步，確保 Rust BPE 速度優化到位。
+此步驟確保編譯環境（Rust）與 Python 虛擬環境就緒。
 
 ```bash
-# 1. 安裝環境與依賴
+# 1. 更新系統並安裝基礎工具
+sudo apt update && sudo apt install -y python3-pip git build-essential
+
+# 2. 安裝 Rust (Tokenizer 編譯核心，必要)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source $HOME/.cargo/env
+
+# 3. 安裝 uv 加速器
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.cargo/env
+export PATH="$HOME/.local/bin:$PATH"
+
+# 4. 安裝依賴 (針對台灣網路優化)
+export UV_HTTP_TIMEOUT=600
 uv venv
 source .venv/bin/activate
-export UV_HTTP_TIMEOUT=600
 uv sync --extra gpu
 
-# 2. 編譯 Rust Tokenizer (沒這步訓練會極慢)
+# 5. 編譯 Rust Tokenizer (沒這步無法執行訓練)
 uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
 
 ```
 
 ---
 
-### 第二階段：資料集準備 (重要)
+## 二、 核心關鍵：資料集準備
 
-**這是你之前卡住的關鍵**。必須先有數據分片（Shards），DataLoader 才能運作。
+**如果你跳過這步，訓練會永遠卡在 `Distributed world size` 畫面。**
 
 ```bash
-# 1. 下載身份資訊 (用於後續 SFT)
-curl -L -o identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
+# 設定環境變數 (根據你的目錄位置)
+export NANOCHAT_BASE_DIR=$(pwd)
 
-# 2. 下載初步訓練資料 (先抓 16 個分片測試，確保 4050 跑得動)
+# 1. 下載身分識別對話資料
+curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
+
+# 2. 下載預訓練數據分片 (Shard)
+# 先下載 16 個分片進行小規模測試
 uv run python -m nanochat.dataset -n 16
 
-# 3. 訓練 Tokenizer (針對這批資料學習詞表)
-uv run python -m scripts.tok_train --max_chars=100000000
+# 3. (選配) 若要正式完整訓練，下載 800 個分片 (需較大硬碟空間)
+# uv run python -m nanochat.dataset -n 800
 
 ```
 
 ---
 
-### 第三階段：RTX 4050 穩定測試指令 (Sanity Check)
+## 三、 訓練指令 (根據你的硬體選擇)
 
-在 6GB 顯存上，請使用這組參數確認流程 100% 噴出 `dt`：
+### 方案 A：筆電/單卡測試 (RTX 4050 6GB)
+
+專為小顯存設計，關閉編譯以求快速看到結果。
 
 ```bash
-# 測試 0.04B 極小模型
+# 深度設為 4，自動推算 dim=256，適合 6GB VRAM
 uv run python -m scripts.base_train \
   --depth=4 \
   --device_batch_size=1 \
   --max_seq_len=256 \
-  --total_batch_size=1024 \
+  --total_batch_size=512 \
   --num_iterations=100 \
   --sample_every=20
 
 ```
 
----
+### 方案 B：高階單卡實測 (RTX 3090 / 4090)
 
-### 第四階段：8xH100 正式訓練 (4 小時 Speedrun 版)
-
-當你切換到 H100 伺服器時，直接執行這套完整流程。
+可以觀察 Loss 下降與 `dt` 表現。
 
 ```bash
-# 1. 下載完整資料集 (800 個分片)
-uv run python -m nanochat.dataset -n 800
+uv run python -m scripts.base_train \
+  --depth=12 \
+  --device_batch_size=4 \
+  --max_seq_len=512 \
+  --total_batch_size=4096 \
+  --num_iterations=100 \
+  --sample_every=50
 
-# 2. 啟動 DDP 分散式預訓練 (目標 0.39B 模型)
-# 設定總卡數
+```
+
+### 方案 C：專業伺服器 (8x H100 滿血版)
+
+這是原作者的 31 小時訓練配置（預算約 $1000 USD）。
+
+```bash
+# 確保環境變數正確
 export NPROC_PER_NODE=8
 
+# 啟動分散式訓練
 uv run torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train \
   --depth=32 \
   --device_batch_size=8 \
-  --run="h100_speedrun_base"
-
-# 3. 知識微調 (Mid-train)
-uv run torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.mid_train \
-  --device_batch_size=8 \
-  --run="h100_speedrun_mid"
-
-# 4. 指令微調 (SFT)
-uv run torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft \
-  --run="h100_speedrun_sft"
+  --run="h100_speedrun_01"
 
 ```
 
 ---
 
-### 第五階段：評估與對話
+## 四、 常見問題排除 (Cheat Sheet)
+
+| 錯誤訊息 / 現象 | 原因 | 解決方案 |
+| --- | --- | --- |
+| `invalid device ordinal` | 請求的 GPU 數量超過實際擁有數 | 檢查 `nproc_per_node` 是否設為 1 |
+| `ValueError: Unknown config key` | 試圖從 CLI 修改 `model_dim` | 修改 `depth` 讓系統自動縮放維度 |
+| **卡在啟動畫面 30 分鐘** | 數據集未下載或 `torch.compile` 過久 | 1. 執行 `nanochat.dataset` <br>
+
+<br> 2. 調小 `depth` |
+| `maturin` 找不到編譯器 | Rust 環境變數未載入 | 執行 `source $HOME/.cargo/env` |
+| **GPU 佔用極低 (2%)** | 系統正在使用 Swap (顯存爆了) | 調小 `max_seq_len` 或 `device_batch_size` |
+
+---
+
+## 五、 後續步驟
+
+訓練完成後，可以使用以下指令與模型對話：
 
 ```bash
-# 生成訓練報告
-uv run python -m nanochat.report generate
-
-# 啟動網頁介面與你自己訓練的模型對話
 uv run python -m scripts.chat_web
 
 ```
 
 ---
 
-### 💡 核心參數對照表 (針對不同顯存)
+**最後提醒：** 在執行 `nanochat.dataset -n 16` 時，請確保你的網路暢通，因為它會從 S3 下載約數 GB 的數據。
 
-| 參數 | RTX 4050 (6GB) | H100 (80GB) | 說明 |
-| --- | --- | --- | --- |
-| **`--depth`** | 4 ~ 6 | 32 | 決定模型深度與維度 |
-| **`--device_batch_size`** | 1 | 8 ~ 32 | 單卡一次吞多少 Token |
-| **`--max_seq_len`** | 256 | 2048 | 模型的「記憶長度」 |
-| **`--nproc_per_node`** | 1 | 8 | 使用的 GPU 數量 |
-
-**目前你已經準備好資料集了嗎？** 如果已經執行了 `python -m nanochat.dataset -n 16`，你可以現在嘗試跑一次第三階段的 **4050 測試指令**，這次應該在 1 分鐘內就會看到 `step 00000` 出現！
