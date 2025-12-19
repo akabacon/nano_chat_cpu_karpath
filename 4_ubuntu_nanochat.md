@@ -1,52 +1,65 @@
+這份筆記整理得非常清晰！針對你遇到的 **`uv` 下載慢**以及 **`maturin` 編譯久**的問題，我稍微調整了你的腳本邏輯，加入了一些「防卡死」與「加速」的細節設定。
+
+這份經過優化的筆記，可以直接作為你的 **H100 環境快速部署指南**：
+
 ---
 
-##  NanoChat 快速部署清單 (Ubuntu 24.04)
+## 🚀 NanoChat 快速部署指南 (Ubuntu 24.04 + GPU 加速版)
 
-### 1. 環境初始化 (環境與工具)
+### 1. 系統環境初始化
 
-此步驟建立隔離環境並安裝編譯所需的 Rust 工具。
+此步驟確保編譯環境（Rust）與隔離環境（Python venv）就緒。
 
 ```bash
-#準備python
-sudo apt install python3-pip
+# 更新系統套件
+sudo apt update && sudo apt install -y python3-pip git build-essential
 
-# 下載專案
+# 複製專案
 git clone https://github.com/karpathy/nanochat.git && cd nanochat
 
-# 建立虛擬環境與升級
-python3 -m venv venv && source venv/bin/activate
-pip install -U pip
-
-# 安裝 Rust (Tokenizer 編譯必備)
+# 安裝 Rust (Tokenizer 編譯核心)
+# 使用 -s -- -y 跳過互動式確認
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source $HOME/.cargo/env
+
+# 安裝 uv 並設定 PATH
+curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.cargo/env
 
 ```
 
-### 2. 安裝依賴項
+### 2. 高速安裝依賴項 (重點優化)
 
-使用 `uv` 提高安裝效率，或直接使用 `pip`。
+針對台灣網路環境，使用 **NCHU (國網中心)** 鏡像站，並增加超時容忍度。
 
 ```bash
-# 安裝 uv 並同步依賴
-curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.cargo/env
-pip install uv
+# 設定加速環境變數 (這兩行對 uv 下載速度至關重要)
 export UV_INDEX_URL=https://pypi.nchc.org.tw/simple/
-export UV_HTTP_TIMEOUT=300
+export UV_HTTP_TIMEOUT=600
+
+# 建立環境並同步 (GPU 模式)
+uv venv
+source .venv/bin/activate
 uv sync --extra gpu
 
+# 編譯 Rust Tokenizer
+# 使用 --release 確保效能，--jobs 可指定編譯執行緒 (如 8xH100 機器可設很大)
 uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
+
 ```
 
-### 3. 資料處理與模型訓練 
+### 3. 資料處理與驗證訓練
 
-執行 BPE 分詞訓練後，立即啟動一個極小規模的訓練任務以驗證流程。
+先用小數據量測試流程，避免 H100 空轉。
 
 ```bash
-# 訓練 Tokenizer
+# 1. 訓練 Tokenizer (初步測試僅用 10萬字)
 uv run python -m scripts.tok_train --max_chars=100000
 
-# 最小化模型訓練 (約 2-5 分鐘)
+# 2. 測試 Tokenizer 壓縮率
+uv run python -m scripts.tok_eval
+
+# 3. 啟動「極小規模」冒煙測試 (驗證 GPU 運作正常)
 uv run python -m scripts.base_train \
   --depth=2 --max_seq_len=64 --n_head=2 \
   --device_batch_size=1 --total_batch_size=64 \
@@ -54,30 +67,32 @@ uv run python -m scripts.base_train \
 
 ```
 
-### 4. 驗證與 Web 互動
+### 4. 啟動 Web UI 互動
 
-確認模型檔案存在，並啟動網頁介面。
+訓練完成後（或載入權重後），開啟網頁介面測試。
 
 ```bash
-# 檢查權重檔案
-ls ~/.cache/nanochat/base_checkpoints/d2/
-
 # 啟動 Web UI
+# 提示：如果是遠端伺服器，可能需要加上 --host 0.0.0.0
 uv run python -m scripts.chat_web
 
 ```
 
-* **瀏覽器訪問**：`http://127.0.0.1:5000`
+---
+
+### 💡 關鍵優化筆記 (Cheat Sheet)
+
+| 問題點 | 解決方案 | 備註 |
+| --- | --- | --- |
+| **uv 下載過慢** | 使用 `UV_INDEX_URL=https://pypi.nchc.org.tw/simple/` | 速度從 KB/s 升至 MB/s |
+| **maturin 編譯卡住** | 確保 `source $HOME/.cargo/env` 已執行 | 需要 Rust 才能編譯 Tokenizer |
+| **H100 預算控制** | 先用 `--depth=2` 跑 Small Run 測試 | 確保沒噴錯再開始 4 小時完整訓練 |
+| **連線中斷** | 使用 `screen` 或 `tmux` 執行腳本 | 避免網路斷線導致訓練中斷 |
 
 ---
 
-### 📋 執行檢查表
+### 下一步建議：
 
-| 階段 | 預期結果 |
-| --- | --- |
-| **環境** | `which rustc` 有回傳路徑 |
-| **Tokenizer** | 生成 `~/.cache/nanochat/tokenizer/` 檔案 |
-| **訓練** | 終端機出現 `loss` 下降數值與文字 Sample |
-| **Web** | 瀏覽器能開啟對話框，輸入後有回傳 (即便亂碼) |
+如果你已經準備好進行 **$100 Speedrun**（完整 4 小時訓練），建議你在啟動前先跑一次 `nvidia-smi` 確認 8 顆 H100 都處於 P0 狀態。
 
-**需要我為您解釋其中特定參數（如 `--n_head` 或 `--depth`）的具體含義嗎？**
+**需要我幫你寫一個自動監控 H100 溫度的簡單小工具，好讓你觀察訓練時的負載嗎？**
