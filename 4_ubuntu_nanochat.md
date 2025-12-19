@@ -61,7 +61,7 @@ uv run python -m nanochat.dataset -n 16
 
 
 ```bash
-#初始化tokenizer
+# 初始化tokenizer
 uv run python -m scripts.tok_train --max_chars=1000000
 ls -l /home/cool/nanochat/tokenizer/tokenizer.pkl
 
