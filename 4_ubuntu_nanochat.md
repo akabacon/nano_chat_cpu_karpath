@@ -38,6 +38,7 @@ uv --version
 ```bash
 # 設定加速環境變數 (這兩行對 uv 下載速度至關重要)
 export UV_INDEX_URL=https://pypi.nchc.org.tw/simple/
+unset UV_INDEX_URL
 export UV_HTTP_TIMEOUT=600
 
 # 建立環境並同步 (GPU 模式)
