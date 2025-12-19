@@ -44,10 +44,10 @@ pip install torch
 
 ```bash
 # 訓練 Tokenizer
-python -m scripts.tok_train --max_chars=100000
+uv run python -m scripts.tok_train --max_chars=100000
 
 # 最小化模型訓練 (約 2-5 分鐘)
-python -m scripts.base_train \
+uv run python -m scripts.base_train \
   --depth=2 --max_seq_len=64 --n_head=2 \
   --device_batch_size=1 --total_batch_size=64 \
   --num_iterations=20 --sample_every=10
@@ -63,7 +63,7 @@ python -m scripts.base_train \
 ls ~/.cache/nanochat/base_checkpoints/d2/
 
 # 啟動 Web UI
-python -m scripts.chat_web
+uv run python -m scripts.chat_web
 
 ```
 
