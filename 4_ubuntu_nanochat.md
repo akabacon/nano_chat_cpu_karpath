@@ -87,6 +87,11 @@ uv run python -m scripts.base_train \
   --num_iterations=100 \
   --sample_every=50
 
+uv run torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+  --depth=20 \
+  --device_batch_size=8 \
+  --num_iterations=50
+
 ```
 
 ### 4. 啟動 Web UI 互動
