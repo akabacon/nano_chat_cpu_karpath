@@ -63,7 +63,7 @@ uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
 # 1. 訓練 Tokenizer (初步測試僅用 10萬字)
 uv run python -m scripts.tok_train --max_chars=100000
 
-# 2. 完整訓練
+# 2. 完整訓練 (batchsize可做調整)
 uv run python -m scripts.base_train \
   --depth=2 \
   --max_seq_len=64 \
