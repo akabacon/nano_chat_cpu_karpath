@@ -1,3 +1,4 @@
+4050大模型
 uv run python -m scripts.base_train \
   --depth=8 \
   --device_batch_size=2 \
