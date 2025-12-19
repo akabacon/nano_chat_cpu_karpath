@@ -81,14 +81,11 @@ uv run python -m scripts.base_train \
   --sample_every=10
 
 uv run python -m scripts.base_train \
-  --depth=6 \
-  --model_dim=512 \
-  --num_heads=8 \
+  --depth=12 \
   --max_seq_len=512 \
-  --device_batch_size=32 \
-  --total_batch_size=16384 \
+  --device_batch_size=4 \
   --num_iterations=100 \
-  --sample_every=10
+  --sample_every=50
 
 ```
 
