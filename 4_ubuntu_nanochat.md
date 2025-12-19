@@ -72,6 +72,16 @@ uv run python -m scripts.base_train \
   --num_iterations=20 \
   --sample_every=10
 
+uv run python -m scripts.base_train \
+  --depth=2 \
+  --max_seq_len=128 \
+  --device_batch_size=32 \
+  --total_batch_size=4096 \
+  --num_iterations=100 \
+  --sample_every=10
+
+
+
 ```
 
 ### 4. 啟動 Web UI 互動
